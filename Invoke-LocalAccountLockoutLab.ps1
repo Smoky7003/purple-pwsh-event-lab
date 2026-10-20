@@ -9,23 +9,35 @@ param(
     [Parameter(Mandatory)]
     [ipaddress]$TargetIp,
 
-    [pscredential]$Credential,
+    [Parameter(Mandatory)]
+    [ValidateNotNullOrEmpty()]
+    [string]$SshUser,
+
+    [string]$KeyFilePath,
 
     [switch]$Cleanup
 )
 
-# Prérequis : WinRM doit être activé sur la cible et la stratégie locale doit
-# déjà verrouiller après 5 échecs. Avec une IP, autorisez la cible dans TrustedHosts.
+# Prérequis : PowerShell 7+, OpenSSH et le sous-système PowerShell SSH doivent
+# être configurés. La stratégie locale doit déjà verrouiller après 5 échecs.
 
 if (-not $PSSenderInfo) {
     $invokeParameters = @{
-        ComputerName = $TargetIp.IPAddressToString
+        HostName     = $TargetIp.IPAddressToString
+        UserName     = $SshUser
         FilePath     = $PSCommandPath
-        ArgumentList = @($Prefix, $UserCount, $TargetIp.IPAddressToString, $null, [bool]$Cleanup)
+        ArgumentList = @(
+            $Prefix,
+            $UserCount,
+            $TargetIp.IPAddressToString,
+            $SshUser,
+            $KeyFilePath,
+            [bool]$Cleanup
+        )
     }
 
-    if ($Credential) {
-        $invokeParameters.Credential = $Credential
+    if ($KeyFilePath) {
+        $invokeParameters.KeyFilePath = $KeyFilePath
     }
 
     Invoke-Command @invokeParameters
