@@ -6,46 +6,72 @@ param(
     [ValidateRange(1, 10)]
     [int]$UserCount = 10,
 
+    [Parameter(Mandatory)]
+    [ipaddress]$TargetIp,
+
+    [pscredential]$Credential,
+
     [switch]$Cleanup
 )
 
-# Prérequis : la stratégie locale doit déjà verrouiller après 5 échecs.
+# Prérequis : WinRM doit être activé sur la cible et la stratégie locale doit
+# déjà verrouiller après 5 échecs. Avec une IP, utilisez HTTPS ou TrustedHosts.
 
-function Write-Timestamp {
-    param([string]$Message)
-    Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $Message"
-}
+$remoteScript = {
+    param(
+        [string]$Prefix,
+        [int]$UserCount,
+        [bool]$Cleanup
+    )
 
-$accounts = 1..$UserCount | ForEach-Object { "$Prefix$_" }
-
-if ($Cleanup) {
-    Write-Timestamp 'Début du nettoyage.'
-    $accounts | ForEach-Object {
-        Remove-LocalUser -Name $_ -ErrorAction SilentlyContinue
+    function Write-Timestamp {
+        param([string]$Message)
+        Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $Message"
     }
-    Write-Timestamp 'Nettoyage terminé.'
-    return
-}
 
-$validPassword = ConvertTo-SecureString ("Purple!{0}" -f [guid]::NewGuid().ToString('N')) -AsPlainText -Force
-$invalidPassword = ConvertTo-SecureString ("Invalid!{0}" -f [guid]::NewGuid().ToString('N')) -AsPlainText -Force
+    $accounts = 1..$UserCount | ForEach-Object { "$Prefix$_" }
 
-Write-Timestamp "Début du test : $UserCount comptes, 5 échecs par compte."
-foreach ($account in $accounts) {
-    if (Get-LocalUser -Name $account -ErrorAction SilentlyContinue) {
-        throw "Le compte $account existe déjà. Lancez -Cleanup ou changez le préfixe."
-    }
-    New-LocalUser -Name $account -Password $validPassword -PasswordNeverExpires | Out-Null
-    Write-Timestamp "Compte créé : $account"
-    1..5 | ForEach-Object {
-        Write-Timestamp "$account — tentative $_/5"
-        try {
-            Start-Process cmd.exe -ArgumentList '/c exit 0' -Credential ([pscredential]::new(".\$account", $invalidPassword)) -WindowStyle Hidden -ErrorAction Stop
+    if ($Cleanup) {
+        Write-Timestamp 'Début du nettoyage.'
+        $accounts | ForEach-Object {
+            Remove-LocalUser -Name $_ -ErrorAction SilentlyContinue
         }
-        catch {
-            # Les cinq échecs d'ouverture de session sont attendus.
-        }
+        Write-Timestamp 'Nettoyage terminé.'
+        return
     }
-    Write-Timestamp "Fin des tentatives : $account"
+
+    $validPassword = ConvertTo-SecureString ("Purple!{0}" -f [guid]::NewGuid().ToString('N')) -AsPlainText -Force
+    $invalidPassword = ConvertTo-SecureString ("Invalid!{0}" -f [guid]::NewGuid().ToString('N')) -AsPlainText -Force
+
+    Write-Timestamp "Début du test : $UserCount comptes, 5 échecs par compte."
+    foreach ($account in $accounts) {
+        if (Get-LocalUser -Name $account -ErrorAction SilentlyContinue) {
+            throw "Le compte $account existe déjà. Lancez -Cleanup ou changez le préfixe."
+        }
+        New-LocalUser -Name $account -Password $validPassword -PasswordNeverExpires | Out-Null
+        Write-Timestamp "Compte créé : $account"
+        1..5 | ForEach-Object {
+            Write-Timestamp "$account — tentative $_/5"
+            try {
+                Start-Process cmd.exe -ArgumentList '/c exit 0' -Credential ([pscredential]::new(".\$account", $invalidPassword)) -WindowStyle Hidden -ErrorAction Stop
+            }
+            catch {
+                # Les cinq échecs d'ouverture de session sont attendus.
+            }
+        }
+        Write-Timestamp "Fin des tentatives : $account"
+    }
+    Write-Timestamp 'Test terminé.'
 }
-Write-Timestamp 'Test terminé.'
+
+$invokeParameters = @{
+    ComputerName = $TargetIp.IPAddressToString
+    ScriptBlock  = $remoteScript
+    ArgumentList = @($Prefix, $UserCount, [bool]$Cleanup)
+}
+
+if ($Credential) {
+    $invokeParameters.Credential = $Credential
+}
+
+Invoke-Command @invokeParameters
