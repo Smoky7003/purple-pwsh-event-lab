@@ -6,10 +6,31 @@ param(
     [ValidateRange(1, 10)]
     [int]$UserCount = 10,
 
+    [Parameter(Mandatory)]
+    [ipaddress]$TargetIp,
+
+    [pscredential]$Credential,
+
     [switch]$Cleanup
 )
 
-# Prérequis : la stratégie locale doit déjà verrouiller après 5 échecs.
+# Prérequis : WinRM doit être activé sur la cible et la stratégie locale doit
+# déjà verrouiller après 5 échecs. Avec une IP, autorisez la cible dans TrustedHosts.
+
+if (-not $PSSenderInfo) {
+    $invokeParameters = @{
+        ComputerName = $TargetIp.IPAddressToString
+        FilePath     = $PSCommandPath
+        ArgumentList = @($Prefix, $UserCount, $TargetIp.IPAddressToString, $null, [bool]$Cleanup)
+    }
+
+    if ($Credential) {
+        $invokeParameters.Credential = $Credential
+    }
+
+    Invoke-Command @invokeParameters
+    return
+}
 
 function Write-Timestamp {
     param([string]$Message)
