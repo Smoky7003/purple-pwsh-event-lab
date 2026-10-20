@@ -15,13 +15,13 @@ param(
 )
 
 # Prérequis : WinRM doit être activé sur la cible et la stratégie locale doit
-# déjà verrouiller après 5 échecs. Avec une IP, utilisez HTTPS ou TrustedHosts.
+# déjà verrouiller après 5 échecs. Avec une IP, autorisez la cible dans TrustedHosts.
 
 if (-not $PSSenderInfo) {
     $invokeParameters = @{
         ComputerName = $TargetIp.IPAddressToString
         FilePath     = $PSCommandPath
-        ArgumentList = @($Prefix, $UserCount, $TargetIp, $null, [bool]$Cleanup)
+        ArgumentList = @($Prefix, $UserCount, $TargetIp.IPAddressToString, $null, [bool]$Cleanup)
     }
 
     if ($Credential) {
